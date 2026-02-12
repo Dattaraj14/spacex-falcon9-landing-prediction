@@ -1,0 +1,176 @@
+import requests
+import pandas as pd
+
+url = "https://api.spacexdata.com/v4/launches"
+response = requests.get(url)
+
+data = response.json()
+df = pd.json_normalize(data)
+
+# Filter Falcon 9
+df_f9 = df[df['name'].str.contains("Falcon 9", na=False)]
+
+df_f9.to_csv("data/api_falcon9.csv", index=False)
+print("API Data Collection Completed")
+
+
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+
+url = "https://en.wikipedia.org/wiki/List_of_Falcon_9_and_Falcon_Heavy_launches"
+response = requests.get(url)
+
+soup = BeautifulSoup(response.text, "html.parser")
+tables = soup.find_all("table", class_="wikitable")
+
+df_list = pd.read_html(str(tables[0]))
+df = df_list[0]
+
+df.to_csv("data/webscraped_launches.csv", index=False)
+print("Web Scraping Completed")
+
+import pandas as pd
+
+df = pd.read_csv("data/dataset_part_1.csv")
+
+# Create binary Class column
+df['Class'] = df['Outcome'].apply(lambda x: 1 if str(x).startswith("True") else 0)
+
+# One-hot encoding
+features = df[['FlightNumber','PayloadMass','Orbit','LaunchSite',
+               'Flights','GridFins','Reused','Legs',
+               'LandingPad','Block','ReusedCount','Serial']]
+
+features = pd.get_dummies(features,
+                          columns=['Orbit','LaunchSite','LandingPad','Serial'])
+
+features.to_csv("data/processed_features.csv", index=False)
+
+print("Data Wrangling Completed")
+print("Total Columns:", features.shape[1])
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+df = pd.read_csv("data/dataset_part_1.csv")
+
+# Flight Number vs Launch Site
+sns.scatterplot(data=df, x="FlightNumber", y="LaunchSite", hue="Class")
+plt.title("Flight Number vs Launch Site")
+plt.show()
+
+# Payload vs Orbit
+sns.scatterplot(data=df, x="PayloadMass", y="Orbit", hue="Class")
+plt.title("Payload vs Orbit")
+plt.show()
+
+SELECT DISTINCT Launch_Site FROM SPACEXTBL;
+
+SELECT COUNT(*) FROM SPACEXTBL;
+
+SELECT MIN(payload_mass__kg_) FROM SPACEXTBL;
+
+SELECT SUM(payload_mass__kg_) AS Total_Payload_Mass
+FROM SPACEXTBL;
+
+SELECT Mission_Outcome, COUNT(*)
+FROM SPACEXTBL
+GROUP BY Mission_Outcome;
+
+
+
+import folium
+import pandas as pd
+from folium.plugins import MarkerCluster
+
+df = pd.read_csv("data/dataset_part_1.csv")
+
+map = folium.Map(location=[28.5, -80.5], zoom_start=5)
+
+marker_cluster = MarkerCluster().add_to(map)
+
+for _, row in df.iterrows():
+    folium.Marker(
+        location=[28.5, -80.5],
+        popup=row['LaunchSite']
+    ).add_to(marker_cluster)
+
+map.save("spacex_map.html")
+print("Folium Map Created")
+
+
+
+
+
+
+
+import dash
+from dash import dcc, html
+import plotly.express as px
+import pandas as pd
+
+df = pd.read_csv("data/spacex_launch_dash.csv")
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    dcc.Dropdown(
+        id='site-dropdown',
+        options=[{'label': 'All Sites', 'value': 'ALL'}] +
+                [{'label': i, 'value': i} for i in df['Launch Site'].unique()],
+        value='ALL',
+        placeholder="Select a Launch Site",
+        searchable=True
+    ),
+    dcc.Graph(id='success-pie-chart')
+])
+
+@app.callback(
+    dash.dependencies.Output('success-pie-chart', 'figure'),
+    dash.dependencies.Input('site-dropdown', 'value')
+)
+def update_chart(site):
+    if site == 'ALL':
+        fig = px.pie(df, names='Launch Site', title='Success Count')
+    else:
+        filtered = df[df['Launch Site'] == site]
+        fig = px.pie(filtered, names='class', title='Site Success')
+    return fig
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score
+
+df = pd.read_csv("data/dataset_part_1.csv")
+df['Class'] = df['Outcome'].apply(lambda x: 1 if str(x).startswith("True") else 0)
+
+X = pd.get_dummies(df[['FlightNumber','PayloadMass','Orbit',
+                       'LaunchSite','Block']], drop_first=True)
+y = df['Class']
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=2
+)
+
+parameters = {'max_depth':[2,4,6,8,10]}
+tree = GridSearchCV(DecisionTreeClassifier(), parameters)
+tree.fit(X_train, y_train)
+
+y_pred = tree.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+print("Best Model Accuracy:", accuracy)
